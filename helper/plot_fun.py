@@ -216,6 +216,7 @@ def plot_3d_list(image_list, name_list=None, fignum=None):
     if name_list is None:
         name_list = ['plot_{}'.format(str(i)) for i in range(len(image_list))]
 
+
     f = plt.figure(fignum)
     size_grid = len(image_list)
     for i, imag in enumerate(image_list):

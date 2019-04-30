@@ -126,4 +126,8 @@ hplot.plot_3d_list(z, name_list=['R factor {}'.format(str(x)) for x in R_factors
 for R in R_factors:
     temp = rel_error_dict[R]['rel_error'][0]
     plt.plot(iter_range, temp, label=R)
-    plt.legend()
+
+plt.xlabel('number of iterations')
+plt.ylabel('relative error')
+plt.title('Overview of different R factors')
+plt.legend()

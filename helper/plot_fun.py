@@ -205,7 +205,7 @@ def redraw_fn(f, axes):
 # videofig(len(_imagelist), redraw_fn, play_fps=60)
 
 
-def plot_3d_list(image_list, name_list=None, fignum=None):
+def plot_3d_list(image_list, name_list=None, fignum=None, figsize=None):
     """
     Input should be list/iterable.. (n_images, x, y, z)
     :param image_list:
@@ -216,8 +216,7 @@ def plot_3d_list(image_list, name_list=None, fignum=None):
     if name_list is None:
         name_list = ['plot_{}'.format(str(i)) for i in range(len(image_list))]
 
-
-    f = plt.figure(fignum)
+    f = plt.figure(num=fignum, figsize=figsize)
     size_grid = len(image_list)
     for i, imag in enumerate(image_list):
         # Print some info about the distribution

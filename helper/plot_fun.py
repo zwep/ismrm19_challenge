@@ -5,6 +5,8 @@ from mpl_toolkits.axes_grid1 import axes_grid
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.widgets import Slider, Button
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.gridspec as gridspec
 
 
 def simple_plot_dict(input_dict):
@@ -205,23 +207,100 @@ def redraw_fn(f, axes):
 # videofig(len(_imagelist), redraw_fn, play_fps=60)
 
 
-def plot_3d_list(image_list, name_list=None, fignum=None, figsize=None):
-    """
-    Input should be list/iterable.. (n_images, x, y, z)
-    :param image_list:
-    :param name_list:
-    :param fignum: the figure number for plotting
-    :return:
-    """
-    if name_list is None:
-        name_list = ['plot_{}'.format(str(i)) for i in range(len(image_list))]
+def plot_3d_list(image_list, **kwargs):
+    # Input of either a 2d list of np.arrays.. or a 3d list of np.arrays..
+    figsize = kwargs.get('figsize')
+    fignum = kwargs.get('fignum')
+    dpi = kwargs.get('dpi')
 
-    f = plt.figure(num=fignum, figsize=figsize)
-    size_grid = len(image_list)
-    for i, imag in enumerate(image_list):
-        # Print some info about the distribution
-        t_max = imag.shape[0]
-        ag = axes_grid.Grid(f, (size_grid, 1, i), tuple(hmisc.get_square(t_max)))
-        ag[0].set_title(name_list[i])
-        for j in range(t_max):
-            ag[j].imshow(imag[j, :, :])
+    title_string = kwargs.get('title', "")
+    sub_title = kwargs.get('subtitle', None)
+    cbar_ind = kwargs.get('cbar', False)
+
+    vmin = kwargs.get('vmin', None)
+    ax_off = kwargs.get('ax_off', False)
+    augm_ind = kwargs.get('augm', None)
+    aspect_mode = kwargs.get('aspect', 'equal')
+
+    wspace = kwargs.get('wspace', 0.1)
+    hspace = kwargs.get('hspace', 0.1)
+    debug = kwargs.get('debug', False)
+
+    f = plt.figure(fignum, figsize, dpi)
+    f.suptitle(title_string)
+
+    # Only when we have an numpy array
+    if isinstance(image_list, np.ndarray):
+        # With just two dimensions..
+        if image_list.ndim == 2:
+            # Add one..
+            image_list = image_list[np.newaxis]
+
+    n_rows = len(image_list)
+    gs0 = gridspec.GridSpec(n_rows, 1, figure=f)
+    gs0.update(wspace=wspace, hspace=hspace)  # set the spacing between axes.
+
+    print('amount of rows..', n_rows)
+    for i, i_gs in enumerate(gs0):
+        temp_img = image_list[i]
+
+        if hasattr(temp_img, 'ndim') and hasattr(temp_img, 'shape') and hasattr(temp_img, 'reshape'):
+            if temp_img.ndim == 4:
+                n_sub_col = temp_img.shape[0]
+                n_sub_row = temp_img.shape[1]
+                temp_img = temp_img.reshape((n_sub_col * n_sub_row, ) + temp_img.shape[2:])
+            elif temp_img.ndim == 3:
+                n_sub_col = temp_img.shape[0]
+                if n_sub_col > 8:
+                    n_sub_col, n_sub_row = hmisc.get_square(n_sub_col)
+                else:
+                    n_sub_row = 1
+            else:
+                temp_img = temp_img[np.newaxis]
+                n_sub_col = 1
+                n_sub_row = 1
+        else:
+            n_sub_col = len(temp_img)
+            n_sub_row = 1
+
+        # If we want to specifcy the vmin per list item.. we can do that here..
+        if isinstance(vmin, list):
+            sel_vmin = vmin[i]
+        else:
+            sel_vmin = vmin
+
+        for j, ii_gs in enumerate(i_gs.subgridspec(n_sub_row, n_sub_col)):
+
+            ax = f.add_subplot(ii_gs)
+            if augm_ind:
+                plot_img = eval('{fun}({var})'.format(fun=augm_ind, var=str('temp_img[j]')))
+                if 'angle' in augm_ind:
+                    sel_vmin = (-np.pi, np.pi)
+            else:
+                plot_img = temp_img[j]
+
+            if debug:
+                print(f'shape {i} - {temp_img.shape}', end=' \t|\t')
+                print(f'row/col {n_sub_row} - {n_sub_col}', end=' \t|\t')
+                print(f'shape {j} - {plot_img.shape}', end=' \t|\n')
+
+            map_ax = ax.imshow(plot_img, vmin=sel_vmin, aspect=aspect_mode, cmap='gray')
+
+            if cbar_ind:
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+                temp_cbar = plt.colorbar(map_ax, cax=cax)
+                if sel_vmin is None:
+                    vmin_temp = [np.min(plot_img), np.max(plot_img)]
+                    map_ax.set_clim(vmin_temp)
+                    temp_cbar.set_ticks(vmin_temp)
+                else:
+                    map_ax.set_clim(vmin)
+                    temp_cbar.set_ticks(vmin)
+
+            if sub_title is not None:
+                ax.set_title(sub_title[i][j])
+            if ax_off:
+                ax.set_axis_off()
+
+    return f

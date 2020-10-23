@@ -22,8 +22,8 @@ import pynufft
 # ==========================================
 
 
-def get_nufft_obj(trajectory, nimg, nfe):
-    NufftObj = pynufft.NUFFT_cpu()
+def get_nufft_obj(trajectory, nimg, nfe, n_kernel=6, device_index=None):
+    NufftObj = pynufft.NUFFT(device_indx=device_index)
 
     n_size = np.prod(trajectory[0].shape)
     traj0_max = np.max(trajectory[0])
@@ -34,7 +34,7 @@ def get_nufft_obj(trajectory, nimg, nfe):
 
     # Stack real and imag together
     om_traj = np.stack([traj0, traj1], axis=-1)
-    NufftObj.plan(om_traj, (nimg, nimg), (nfe, nfe), (6, 6))
+    NufftObj.plan(om_traj, Nd=(nimg, nimg), Kd=(nfe, nfe), Jd=(n_kernel, n_kernel))
 
     return NufftObj
 
@@ -51,132 +51,145 @@ def get_recon_img(nufft_obj, rawdata, n_iter):
 
     recon_img = np.sqrt(np.sum([np.square(np.abs(x)) for x in rendered_img], axis=0))
 
-    return recon_img
+    return recon_img, rendered_img
 
 
 # ==========================================
 # Load data
 # ==========================================
 
-d_data = r'C:\Users\20184098\Documents\data\ismrm_challenge\rrsg_challenge\rrsg_challenge'
-h5_dataset_brain = h5py.File(os.path.join(d_data, 'rawdata_brain_radial_96proj_12ch.h5'), 'r')
-h5_dataset_heart = h5py.File(os.path.join(d_data, 'rawdata_heart_radial_55proj_34ch.h5'), 'r')
+if __name__ == "__main__":
+    d_data = '/home/bugger/Documents/data/rrsg_challenge'
+    h5_dataset_brain = h5py.File(os.path.join(d_data, 'rawdata_brain_radial_96proj_12ch.h5'), 'r')
+    h5_dataset_heart = h5py.File(os.path.join(d_data, 'rawdata_heart_radial_55proj_34ch.h5'), 'r')
 
-dir_image = r'C:\Users\20184098\PycharmProjects\ismrm19_challenge\result_images'
+    dir_image = os.path.join(d_data, 'result')
+    if not os.path.isdir(dir_image):
+        os.mkdir(dir_image)
 
-R_factors = [1, 2, 3, 4]
-iter_range = list(range(1, 105, 5))
+    plot_intermediate = False
 
-# Choose dataset
-for name, h5_dataset in [('brain', h5_dataset_brain), ('heart', h5_dataset_heart)]:
-    # pass
+    R_factors = [1, 2, 3, 4]
+    # iter_range = list(range(1, 105, 5))
+    iter_range = [10, 25]
 
-    print("Keys: %s" % h5_dataset.keys())
-    h5_dataset_rawdata_name = list(h5_dataset.keys())[0]
-    h5_dataset_trajectory_name = list(h5_dataset.keys())[1]
+    # Choose dataset
+    for name, h5_dataset in [('brain', h5_dataset_brain), ('heart', h5_dataset_heart)]:
+        # pass
+        # name = 'brain'
+        # h5_dataset = h5_dataset_brain
 
-    trajectory = h5_dataset.get(h5_dataset_trajectory_name)[()]
-    rawdata = h5_dataset.get(h5_dataset_rawdata_name)[()]
+        print("Keys: %s" % h5_dataset.keys())
+        h5_dataset_rawdata_name = list(h5_dataset.keys())[0]
+        h5_dataset_trajectory_name = list(h5_dataset.keys())[1]
 
-    [dummy, nFE, nSpokes, nCh] = rawdata.shape
+        trajectory = h5_dataset.get(h5_dataset_trajectory_name)[()]
+        rawdata = h5_dataset.get(h5_dataset_rawdata_name)[()]
 
-    # ==========================================
-    # Information
-    # ==========================================
+        [dummy, nFE, nSpokes, nCh] = rawdata.shape
 
-    print('Number of FE       ', nFE)
-    print('Number of spokes   ', nSpokes)
-    print('Number of channels ', nCh)
+        # ==========================================
+        # Information
+        # ==========================================
 
-    nImg = int(nFE)
-    print('Proposed img size  ', nImg)
-    print('Rawdata size       ', rawdata.shape)
+        print('Number of FE       ', nFE)
+        print('Number of spokes   ', nSpokes)
+        print('Number of channels ', nCh)
 
-    # ==========================================
-    # Recovery
-    # ==========================================
-    """
-    1. 
-    An implementation of the algorithm in Figure 1 of [1]. Any programming language, as well as third-party 
-    software (e.g. implementations of the Non-Uniform Fourier transform or the Conjugate Gradient Algorithm) is fine, 
-    as long as the source code can be shared and the computational results can be reproduced. 
-    """
+        nImg = int(nFE)
+        print('Proposed img size  ', nImg)
+        print('Rawdata size       ', rawdata.shape)
 
-    nufft_obj = get_nufft_obj(trajectory, nImg, nFE)
-    true_image = get_recon_img(nufft_obj, rawdata, 100)
+        # ==========================================
+        # Recovery
+        # ==========================================
+        """
+        1. 
+        An implementation of the algorithm in Figure 1 of [1]. Any programming language, as well as third-party 
+        software (e.g. implementations of the Non-Uniform Fourier transform or the Conjugate Gradient Algorithm) is fine, 
+        as long as the source code can be shared and the computational results can be reproduced. 
+        """
 
-    result_dict = {}
-    for R in R_factors:
-        print('Calculating reconstruction with R factor ', R)
-        result_dict.setdefault(R, {})
-        result_dict[R].setdefault('rel_error', [])
-        result_dict[R].setdefault('recon_img', [])
+        nufft_obj = get_nufft_obj(trajectory, nImg, nFE)
+        true_image = get_recon_img(nufft_obj, rawdata, 5)
 
-        rel_error_list = []
-        recon_img_list = []
+        if plot_intermediate:
+            plt.imshow(true_image)
 
-        nufft_obj = get_nufft_obj(trajectory[:, :, 1::R], nImg, nFE)
-        for i_iter in iter_range:
-            print('\t Calculating reconstruction with maxiter ', i_iter)
-            aprox_image = get_recon_img(nufft_obj, rawdata[:, :, 1::R, :], i_iter)
+        result_dict = {}
+        for R in R_factors:
+            print('Calculating reconstruction with R factor ', R)
+            result_dict.setdefault(R, {})
+            result_dict[R].setdefault('rel_error', [])
+            result_dict[R].setdefault('recon_img', [])
+
+            rel_error_list = []
+            recon_img_list = []
+
+            nufft_obj = get_nufft_obj(trajectory[:, :, 1::R], nImg, nFE)
+            for i_iter in iter_range:
+                print('\t Calculating reconstruction with maxiter ', i_iter)
+                aprox_image = get_recon_img(nufft_obj, rawdata[:, :, 1::R, :], i_iter)
 
 
-            rel_error = np.linalg.norm(aprox_image - true_image)/np.linalg.norm(true_image)
-            rel_error_list.append(rel_error)
+                rel_error = np.linalg.norm(aprox_image - true_image)/np.linalg.norm(true_image)
+                rel_error_list.append(rel_error)
 
-            if i_iter == 1:
                 recon_img_list.append(aprox_image)
-            elif i_iter == 11:
-                recon_img_list.append(aprox_image)
+                # if i_iter == 1:
+                #     recon_img_list.append(aprox_image)
+                # elif i_iter == 11:
+                #     recon_img_list.append(aprox_image)
 
-        # As a last item.. add the single coil reconstruction
-        single_coil = get_recon_img(nufft_obj, rawdata[:, :, 1::R, 0:1], i_iter)
-        recon_img_list.append(single_coil)
 
-        result_dict[R]['rel_error'].append(rel_error_list)
-        result_dict[R]['recon_img'].append(recon_img_list)
+            # As a last item.. add the single coil reconstruction
+            single_coil = get_recon_img(nufft_obj, rawdata[:, :, 1::R, 0:1], i_iter)
+            recon_img_list.append(single_coil)
 
-    # ===
-    # Store model results..
-    # ===
+            result_dict[R]['rel_error'].append(rel_error_list)
+            result_dict[R]['recon_img'].append(recon_img_list)
 
-    # ser_json = json.dumps(result_dict)
-    # with open(os.path.join(dir_image, name + '_result_dict.json'), 'w') as f:
-    #     f.write(ser_json)
+        # ===
+        # Store model results..
+        # ===
 
-    # ==========================================
-    # Plot desired figures
-    # ==========================================
-    """
-    Subsample the provided brain data by factors 2,3 and 4 (48, 32 and 24 projections), do a reconstruction, calculate 
-    the error to the 96 projections reconstruction and plot the error and the number of iterations according to
-    the results in Figure 4 in [1]. 
-    """
+        # ser_json = json.dumps(result_dict)
+        # with open(os.path.join(dir_image, name + '_result_dict.json'), 'w') as f:
+        #     f.write(ser_json)
 
-    plt.figure(figsize=(20, 20))
-    for R in R_factors:
-        temp = result_dict[R]['rel_error'][0]
-        plt.plot(iter_range, temp, label=R)
+        # ==========================================
+        # Plot desired figures
+        # ==========================================
+        """
+        Subsample the provided brain data by factors 2,3 and 4 (48, 32 and 24 projections), do a reconstruction, calculate 
+        the error to the 96 projections reconstruction and plot the error and the number of iterations according to
+        the results in Figure 4 in [1]. 
+        """
 
-    plt.xlabel('number of iterations')
-    plt.ylabel('relative error')
-    plt.title('Overview of different R factors')
-    plt.legend()
-    name_fig = name + '_figure_4.png'
-    plt.savefig(os.path.join(dir_image, name_fig))
+        plt.figure(figsize=(20, 20))
+        for R in R_factors:
+            temp = result_dict[R]['rel_error'][0]
+            plt.plot(iter_range, temp, label=R)
 
-    plt.close()
+        plt.xlabel('number of iterations')
+        plt.ylabel('relative error')
+        plt.title('Overview of different R factors')
+        plt.legend()
+        name_fig = name + '_figure_4.png'
+        plt.savefig(os.path.join(dir_image, name_fig))
 
-    """
-    For the same data, show reconstruction results for different iteration numbers and a version from 
-    a single receive coil according to the results in Figure 5. 
-    """
+        plt.close()
 
-    temp_recon_img_list = np.concatenate([np.array(result_dict[i]['recon_img']) for i in R_factors], axis=0)
-    temp_name_list = ['R factor {}'.format(str(x)) for x in R_factors]
+        """
+        For the same data, show reconstruction results for different iteration numbers and a version from 
+        a single receive coil according to the results in Figure 5. 
+        """
 
-    hplot.plot_3d_list(temp_recon_img_list, name_list=temp_name_list, figsize=(20, 20))
-    name_fig = name + '_figure_5.png'
-    plt.savefig(os.path.join(dir_image, name_fig))
+        temp_recon_img_list = np.concatenate([np.array(result_dict[i]['recon_img']) for i in R_factors], axis=0)
+        temp_name_list = ['R factor {}'.format(str(x)) for x in R_factors]
 
-    plt.close()
+        hplot.plot_3d_list(temp_recon_img_list, name_list=temp_name_list, figsize=(20, 20))
+        name_fig = name + '_figure_5.png'
+        plt.savefig(os.path.join(dir_image, name_fig))
+
+        plt.close()
